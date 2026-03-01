@@ -1,0 +1,107 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(900px 500px at 20% 10%, rgba(255, 204, 102, 0.14), transparent 60%),
+    radial-gradient(900px 500px at 80% 20%, rgba(123, 223, 246, 0.14), transparent 60%),
+    radial-gradient(1100px 700px at 50% 100%, rgba(255, 255, 255, 0.06), transparent 55%),
+    var(--bg);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  line-height: 1.45;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+.container {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.section {
+  padding: 56px 0;
+}
+
+.lead {
+  color: var(--muted);
+  font-size: 1.05rem;
+  max-width: 70ch;
+}
+
+.fineprint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.skip-link:focus {
+  left: 12px;
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(10px);
+  background: rgba(10, 16, 32, 0.62);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.brand__link {
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.site-footer {
+  border-top: 1px solid var(--hairline);
+  padding: 28px 0;
+}
+
+.footer-links {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .site-header .container {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

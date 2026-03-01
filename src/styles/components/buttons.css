@@ -1,0 +1,29 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  text-decoration: none;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  box-shadow: none;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn--primary {
+  border-color: rgba(255, 204, 102, 0.35);
+  background: linear-gradient(180deg, rgba(255, 204, 102, 0.22), rgba(255, 204, 102, 0.12));
+}
+
+.btn--ghost {
+  background: transparent;
+}

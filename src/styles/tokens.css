@@ -1,0 +1,17 @@
+:root {
+  --bg: #0b1020;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.72);
+  --hairline: rgba(255, 255, 255, 0.14);
+
+  --accent: #ffcc66;
+  --accent-2: #7bdff6;
+  --danger: #ff6b6b;
+
+  --radius: 14px;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+
+  --container: 1100px;
+}

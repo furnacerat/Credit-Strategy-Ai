@@ -1,0 +1,35 @@
+.hero {
+  padding: 72px 0 40px;
+}
+
+.hero h1 {
+  margin: 0 0 10px;
+  font-size: clamp(2rem, 3.6vw, 3.1rem);
+  line-height: 1.08;
+}
+
+.hero__cta {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.faq {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  max-width: 80ch;
+}
+
+details {
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px 14px;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 650;
+}

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact | Credit Repair</title>
+    <meta name="description" content="Book a free credit repair consult." />
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/base.css" />
+    <link rel="stylesheet" href="/styles/components/buttons.css" />
+    <link rel="stylesheet" href="/styles/components/forms.css" />
+    <link rel="stylesheet" href="/styles/components/nav.css" />
+    <link rel="stylesheet" href="/styles/components/sections.css" />
+    <link rel="stylesheet" href="/styles/pages/contact.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <div class="brand"><a class="brand__link" href="/">Credit Repair</a></div>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="/pages/services.html">Services</a>
+          <a href="/pages/pricing.html">Pricing</a>
+          <a href="/pages/faq.html">FAQ</a>
+          <a aria-current="page" href="/pages/contact.html" class="btn btn--primary">Free Consult</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="section" id="main">
+      <div class="container">
+        <h1>Free consult</h1>
+        <p class="lead">Tell us what you are working on and we will reply quickly.</p>
+
+        <form class="form" id="contactForm" novalidate>
+          <div class="field">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" autocomplete="name" required />
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required />
+          </div>
+          <div class="field">
+            <label for="phone">Phone (optional)</label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel" />
+          </div>
+          <div class="field">
+            <label for="message">What do you need help with?</label>
+            <textarea id="message" name="message" rows="6" required></textarea>
+          </div>
+          <button class="btn btn--primary" type="submit">Send</button>
+          <p class="fineprint" id="formNote">We do not share your information.</p>
+        </form>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <nav class="footer-links" aria-label="Footer">
+          <a href="/pages/privacy.html">Privacy</a>
+          <a href="/pages/terms.html">Terms</a>
+          <a href="/pages/disclaimer.html">Disclaimer</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="/scripts/main.js" defer></script>
+    <script src="/scripts/form/contact.js" defer></script>
+  </body>
+</html>
