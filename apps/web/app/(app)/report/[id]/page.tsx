@@ -52,13 +52,24 @@ export default function ReportPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (!data) return;
+    // Debug hook: confirm analysis JSON exists and keys are correct.
+    // eslint-disable-next-line no-console
+    console.log('report.analysis_json', data.analysis_json);
+  }, [data]);
+
   const status = data?.status || 'unknown';
   const progress = typeof data?.progress === 'number' ? data.progress : 0;
   const letters: Letter[] = (data?.dispute_letters || []) as any;
-  const analysis = data?.report_analysis?.result;
+  const analysis = data?.analysis_json as any;
   const items = (data?.report_items || []) as any[];
 
-  const counts = (analysis?.counts || {}) as Record<string, number>;
+  const counts = (analysis?.counts || analysis?.credit_summary?.counts || {}) as Record<string, number>;
+  const accounts = (analysis?.accounts || []) as any[];
+  const disputeStrategies = (analysis?.dispute_strategies || []) as any[];
+  const aiLetters = (analysis?.dispute_letters || []) as any[];
 
   return (
     <div>
@@ -90,6 +101,14 @@ export default function ReportPage() {
 
         {data?.error ? <p className="error">Worker error: {data.error}</p> : null}
         {error ? <p className="error">{error}</p> : null}
+
+        {!analysis ? (
+          <p className="fineprint">
+            Debug: `analysis_json` is empty. Confirm: (1) Supabase migration added `reports.analysis_json`, (2)
+            worker has `OPENAI_API_KEY`, (3) worker logs show OpenAI extraction ran, (4) this API route returns
+            `analysis_json`.
+          </p>
+        ) : null}
       </section>
 
       <section className="grid grid--two">
@@ -97,9 +116,9 @@ export default function ReportPage() {
           <h2>Analysis</h2>
           {analysis ? (
             <div className="kv">
-              <div className="kv__row"><span className="muted">Pages</span><span>{analysis.pages ?? '—'}</span></div>
-              <div className="kv__row"><span className="muted">OCR pages</span><span>{analysis.ocr_pages ?? '—'}</span></div>
-              <div className="kv__row"><span className="muted">Extracted chars</span><span>{analysis.total_chars ?? '—'}</span></div>
+              <div className="kv__row"><span className="muted">Score range</span><span>{analysis.credit_summary?.estimated_score_range ?? '—'}</span></div>
+              <div className="kv__row"><span className="muted">Total accounts</span><span>{analysis.credit_summary?.total_accounts ?? accounts.length ?? '—'}</span></div>
+              <div className="kv__row"><span className="muted">Negative items</span><span>{analysis.credit_summary?.negative_accounts_count ?? analysis.negative_items?.length ?? '—'}</span></div>
               <div className="kv__row"><span className="muted">Late payments</span><span>{counts.late_payment ?? 0}</span></div>
               <div className="kv__row"><span className="muted">Charge offs</span><span>{counts.charge_off ?? 0}</span></div>
               <div className="kv__row"><span className="muted">Collections</span><span>{counts.collection ?? 0}</span></div>
@@ -136,6 +155,121 @@ export default function ReportPage() {
                   </div>
                   <span className="pill pill--ready">Download</span>
                 </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Account breakdown</h2>
+        {accounts.length === 0 ? (
+          <p className="muted">No accounts extracted yet.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <thead>
+                <tr>
+                  {[
+                    'Creditor',
+                    'Type',
+                    'Bureau',
+                    'Status',
+                    'Balance',
+                    'Limit',
+                    'Util %',
+                    'Late',
+                    'Flags'
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: 'left',
+                        padding: '10px 10px',
+                        borderBottom: '1px solid rgba(255,255,255,0.12)',
+                        color: 'rgba(255,255,255,0.72)',
+                        fontWeight: 700,
+                        fontSize: '0.9rem'
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.slice(0, 50).map((a, idx) => {
+                  const creditor = a.creditor_name || a.creditor || a.furnisher || '—';
+                  const type = a.account_type || a.type || '—';
+                  const bureau = a.bureau || '—';
+                  const status = a.status || a.account_status || '—';
+                  const balance = a.balance ?? null;
+                  const limit = a.credit_limit ?? a.limit ?? null;
+                  const util =
+                    a.utilization_percentage ??
+                    (balance != null && limit ? Math.round((Number(balance) / Number(limit)) * 100) : null);
+                  const late = a.late_payments || a.lates || null;
+                  const flags: string[] = [];
+                  if (a.derogatory_flag) flags.push('derog');
+                  if (a.charge_off_flag) flags.push('charge-off');
+                  if (a.collection_flag) flags.push('collection');
+                  if (a.past_due_amount) flags.push('past-due');
+
+                  return (
+                    <tr key={idx}>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{creditor}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{type}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{bureau}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{status}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{balance ?? '—'}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{limit ?? '—'}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{util != null ? `${util}%` : '—'}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{late ? JSON.stringify(late) : '—'}</td>
+                      <td style={{ padding: '10px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        {flags.length ? flags.join(', ') : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {accounts.length > 50 ? <p className="fineprint">Showing first 50 accounts.</p> : null}
+          </div>
+        )}
+      </section>
+
+      <section className="grid grid--two">
+        <div className="card">
+          <h2>Dispute strategies</h2>
+          {disputeStrategies.length === 0 ? (
+            <p className="muted">No strategies yet.</p>
+          ) : (
+            <div className="letters" style={{ marginTop: 10 }}>
+              {disputeStrategies.slice(0, 12).map((s, i) => (
+                <div key={i} className="letter" style={{ cursor: 'default' }}>
+                  <div>
+                    <p className="card__title">{s.creditor_name || s.creditor || 'Strategy'}</p>
+                    <p className="muted">{s.dispute_type || '—'} • {s.success_probability || '—'}</p>
+                    <p className="muted" style={{ marginTop: 8 }}>{s.dispute_reason || s.reason || ''}</p>
+                  </div>
+                  <span className="pill pill--processing">{s.impact_level || '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>AI letters (draft content)</h2>
+          {aiLetters.length === 0 ? (
+            <p className="muted">No AI letters in analysis JSON yet.</p>
+          ) : (
+            <div className="letters" style={{ marginTop: 10 }}>
+              {aiLetters.slice(0, 6).map((l, i) => (
+                <details key={i} style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 16, padding: 12, background: 'rgba(255,255,255,0.05)' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 750 }}>{l.bureau || l.credit_bureau || `Letter ${i + 1}`}</summary>
+                  <pre className="mono" style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{l.content || l.letter || JSON.stringify(l, null, 2)}</pre>
+                </details>
               ))}
             </div>
           )}

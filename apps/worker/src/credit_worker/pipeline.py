@@ -13,6 +13,7 @@ from credit_worker.pdf.real_extract import extract_text_pages, page_count
 from credit_worker.parse.items import iter_report_items
 from credit_worker.ai.openai_http import OpenAIHttp
 from credit_worker.ai.recommend import recommend_items_for_report
+from credit_worker.ai.extract_full_report import extract_ui_report
 
 
 def set_report_status(
@@ -80,6 +81,17 @@ def insert_item(
 
 
 def upsert_analysis(conn: psycopg.Connection, *, report_id: str, result: dict[str, Any]) -> None:
+  # Persist analysis on the report row (UI contract) and in report_analysis (history/trace).
+  with conn.cursor() as cur:
+    cur.execute(
+      """
+      update public.reports
+      set analysis_json = %s::jsonb, updated_at = now()
+      where id = %s;
+      """,
+      (json.dumps(result), report_id)
+    )
+
   with conn.cursor() as cur:
     cur.execute(
       """
@@ -151,6 +163,25 @@ def parse_pdf_to_pages(
     set_report_status(conn, report_id=report_id, status='processing', progress=progress)
 
 
+def _full_text(conn: psycopg.Connection, *, report_id: str) -> str:
+  with conn.cursor() as cur:
+    cur.execute(
+      """
+      select page_number, text
+      from public.report_pages
+      where report_id = %s
+      order by page_number asc;
+      """,
+      (report_id,)
+    )
+    rows = cur.fetchall() or []
+  parts: list[str] = []
+  for page_number, text in rows:
+    parts.append(f"\n\n--- PAGE {page_number} ---\n")
+    parts.append(text or '')
+  return ''.join(parts)
+
+
 def run_report_pipeline(
   *,
   conn: psycopg.Connection,
@@ -177,61 +208,77 @@ def run_report_pipeline(
       tesseract_lang=tesseract_lang
     )
 
-    # AI recommendations and initial draft selections.
-    # (Requires OPENAI_API_KEY; if missing, we still complete parsing.)
+    # Full UI-ready extraction into strict JSON structure.
+    # This becomes the primary payload the frontend can render.
     try:
       client = OpenAIHttp(api_key=business.get('openai_api_key', ''), model=business.get('openai_model', 'gpt-4o-mini'))
       if client.api_key:
-        set_report_status(conn, report_id=report_id, status='processing', progress=92)
-        recommend_items_for_report(conn, report_id=report_id, client=client)
-        set_report_status(conn, report_id=report_id, status='processing', progress=95)
+        set_report_status(conn, report_id=report_id, status='processing', progress=91)
+        raw_text = _full_text(conn, report_id=report_id)
+        ui_report = extract_ui_report(client=client, raw_text=raw_text)
+        upsert_analysis(conn, report_id=report_id, result=ui_report)
+        set_report_status(conn, report_id=report_id, status='processing', progress=93)
     except Exception as e:
-      # Don't fail the whole pipeline due to AI.
       with conn.cursor() as cur:
         cur.execute(
-          "update public.reports set error = left(coalesce(error,'') || '\nAI: ' || %s, 4000) where id = %s;",
+          "update public.reports set error = left(coalesce(error,'') || '\nUI_EXTRACT: ' || %s, 4000) where id = %s;",
           (str(e), report_id)
         )
 
-    # Basic analysis (placeholder until we parse tradelines/collections/inquiries).
-    total_pages = page_count(str(pdf_file))
+    # AI recommendations and initial draft selections (item-level engine).
+    # Keep pipeline robust if AI is disabled or errors.
+    try:
+      client = OpenAIHttp(api_key=business.get('openai_api_key', ''), model=business.get('openai_model', 'gpt-4o-mini'))
+      if client.api_key:
+        set_report_status(conn, report_id=report_id, status='processing', progress=95)
+        recommend_items_for_report(conn, report_id=report_id, client=client)
+        set_report_status(conn, report_id=report_id, status='processing', progress=97)
+    except Exception as e:
+      with conn.cursor() as cur:
+        cur.execute(
+          "update public.reports set error = left(coalesce(error,'') || '\nAI_ITEMS: ' || %s, 4000) where id = %s;",
+          (str(e), report_id)
+        )
+
+    # If UI extraction didn't run, still write a small analysis payload.
     with conn.cursor() as cur:
       cur.execute(
-        """
-        select
-          count(*) filter (where ocr_used) as ocr_pages,
-          sum(length(text)) as total_chars
-        from public.report_pages
-        where report_id = %s;
-        """,
+        "select 1 from public.report_analysis where report_id = %s;",
         (report_id,)
       )
-      row = cur.fetchone() or (0, 0)
-      ocr_pages = int(row[0] or 0)
-      total_chars = int(row[1] or 0)
-
-    # Summary counts by category.
-    with conn.cursor() as cur:
-      cur.execute(
-        """
-        select category, count(*)
-        from public.report_items
-        where report_id = %s
-        group by category
-        order by category;
-        """,
-        (report_id,)
+      has_analysis = cur.fetchone() is not None
+    if not has_analysis:
+      total_pages = page_count(str(pdf_file))
+      with conn.cursor() as cur:
+        cur.execute(
+          """
+          select
+            count(*) filter (where ocr_used) as ocr_pages,
+            sum(length(text)) as total_chars
+          from public.report_pages
+          where report_id = %s;
+          """,
+          (report_id,)
+        )
+        row = cur.fetchone() or (0, 0)
+        ocr_pages = int(row[0] or 0)
+        total_chars = int(row[1] or 0)
+      upsert_analysis(
+        conn,
+        report_id=report_id,
+        result={
+          'personal_info': {},
+          'credit_summary': {'pages': total_pages, 'ocr_pages': ocr_pages, 'total_chars': total_chars},
+          'accounts': [],
+          'negative_items': [],
+          'utilization': {},
+          'public_records': [],
+          'priority_issues': [],
+          'dispute_strategies': [],
+          'dispute_letters': [],
+          'improvement_plan': {}
+        }
       )
-      counts = {str(cat): int(cnt) for (cat, cnt) in (cur.fetchall() or [])}
-
-    analysis = {
-      "report_id": report_id,
-      "pages": total_pages,
-      "ocr_pages": ocr_pages,
-      "total_chars": total_chars,
-      "counts": counts
-    }
-    upsert_analysis(conn, report_id=report_id, result=analysis)
 
     # Draft dispute letters as text files.
     # Letters are now drafts awaiting user approval (stored in DB).

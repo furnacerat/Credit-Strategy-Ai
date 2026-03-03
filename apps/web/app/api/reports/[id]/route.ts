@@ -48,6 +48,7 @@ export async function GET(
       progress,
       error,
       created_at,
+      analysis_json,
       report_items!report_items_report_id_fkey (
         id,
         bureau,
@@ -62,7 +63,6 @@ export async function GET(
         report_item_ai ( recommendation, risk_level, rationale, evidence_needed, legal_basis, letter_snippet, model, updated_at ),
         report_item_selection ( selected, updated_at )
       ),
-      report_analysis ( result, updated_at ),
       letter_drafts ( id, bureau, status, content, item_ids, created_at, approved_at ),
       dispute_letters ( id, bureau, storage_bucket, storage_path, created_at )
     `.trim()
