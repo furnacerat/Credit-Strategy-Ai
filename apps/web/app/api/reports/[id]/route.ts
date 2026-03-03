@@ -48,7 +48,7 @@ export async function GET(
       progress,
       error,
       created_at,
-      report_items (
+      report_items!report_items_report_id_fkey (
         id,
         bureau,
         category,
