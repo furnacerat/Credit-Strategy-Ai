@@ -285,7 +285,8 @@ export default function CreditDashboardMatrix({
   onOpenAccounts?: () => void;
   onExportLetters?: () => void;
 }) {
-  const data = analysis ?? demoAnalysis;
+  const isDev = process.env.NODE_ENV === 'development';
+  const data: Analysis = analysis ?? (isDev ? demoAnalysis : {});
 
   const score = data.credit_summary?.score ?? null;
   const util = data.utilization?.utilization_percentage ?? null;

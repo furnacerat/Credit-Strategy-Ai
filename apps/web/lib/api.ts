@@ -111,3 +111,21 @@ export async function signLetterDownload(letterId: string): Promise<string> {
   const data = (await res.json()) as { url: string };
   return data.url;
 }
+
+export async function signReportDownload(reportId: string): Promise<string> {
+  const token = await accessToken();
+  const res = await fetch('/api/reports/signed', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ report_id: reportId })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Sign failed (${res.status})`);
+  }
+  const data = (await res.json()) as { url: string };
+  return data.url;
+}
