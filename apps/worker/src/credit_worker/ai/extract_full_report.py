@@ -5,6 +5,7 @@ from typing import Any
 
 from credit_worker.ai.openai_http import OpenAIHttp
 from credit_worker.ai.report_schema import empty_report, ui_schema
+from credit_worker.ai.normalize import normalize_ui_report
 
 
 def _system_prompt() -> str:
@@ -43,6 +44,16 @@ def _system_prompt() -> str:
     "PII HANDLING\n"
     "- In personal_info and accounts, keep sensitive identifiers masked when present (e.g., account number, SSN).\n"
     "- If a value would be unmasked PII, output null or a placeholder string like '{{FULL_NAME}}' for letters.\n\n"
+
+    "METRICS (DO NOT SKIP)\n"
+    "- credit_summary.score: a number 300-850 when present in report\n"
+    "- credit_summary.on_time_payment_ratio: 0-1 when derivable\n"
+    "- credit_summary.total_accounts: integer\n"
+    "- credit_summary.negative_accounts_count: integer\n"
+    "- credit_summary.estimated_score_range: string like '590-640' when report provides it\n"
+    "- utilization.total_credit_limit, utilization.total_balance, utilization.utilization_percentage\n"
+    "- Include late payments, collections, charge-offs in negative_items with creditor + bureau + dates when present\n\n"
+
     "Return JSON structured EXACTLY like this:\n"
     + json.dumps(empty_report(), ensure_ascii=True)
   )
@@ -129,4 +140,4 @@ def extract_ui_report(*, client: OpenAIHttp, raw_text: str) -> dict[str, Any]:
     f"MERGED_JSON: {json.dumps(merged, ensure_ascii=True)}"
   )
   final = client.json_schema(system=system, user=final_user, schema=schema)
-  return final
+  return normalize_ui_report(final)

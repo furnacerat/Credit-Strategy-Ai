@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 from typing import Any
 import json
+import re
 
 import psycopg
 
@@ -193,10 +194,26 @@ def _has_analysis_json(conn: psycopg.Connection, *, report_id: str) -> bool:
   return bool(row and row[0])
 
 
-def _basic_ui_payload(conn: psycopg.Connection, *, report_id: str, pdf_file: Path) -> dict[str, Any]:
-  base = empty_report()
+def _extract_score_from_text(text: str) -> int | None:
+  patterns = [
+    r"\bFICO\b[^\d]{0,40}(\d{3})\b",
+    r"\bVantage\s*Score\b[^\d]{0,40}(\d{3})\b",
+    r"\bCredit\s*Score\b[^\d]{0,40}(\d{3})\b",
+    r"\bScore\b[^\d]{0,20}(\d{3})\b"
+  ]
+  for pat in patterns:
+    m = re.search(pat, text, flags=re.IGNORECASE)
+    if not m:
+      continue
+    v = int(m.group(1))
+    if 300 <= v <= 850:
+      return v
+  return None
 
+
+def _extraction_metrics(conn: psycopg.Connection, *, report_id: str, pdf_file: Path) -> dict[str, Any]:
   total_pages = page_count(str(pdf_file))
+
   with conn.cursor() as cur:
     cur.execute(
       """
@@ -229,15 +246,75 @@ def _basic_ui_payload(conn: psycopg.Connection, *, report_id: str, pdf_file: Pat
   for k in ['late_payment', 'charge_off', 'collection', 'repossession', 'bankruptcy', 'public_record']:
     negatives += int(counts.get(k, 0))
 
-  base['credit_summary'] = {
-    'total_accounts': None,
-    'negative_accounts_count': negatives,
-    'estimated_score_range': None,
+  score = None
+  try:
+    score = _extract_score_from_text(_full_text(conn, report_id=report_id))
+  except Exception:
+    score = None
+
+  return {
     'pages': total_pages,
     'ocr_pages': ocr_pages,
     'total_chars': total_chars,
-    'counts': counts
+    'counts': counts,
+    'negative_accounts_count': negatives,
+    'score': score
   }
+
+
+def _basic_ui_payload(conn: psycopg.Connection, *, report_id: str, pdf_file: Path) -> dict[str, Any]:
+  base = empty_report()
+  metrics = _extraction_metrics(conn, report_id=report_id, pdf_file=pdf_file)
+
+  base['credit_summary'] = {
+    'score': metrics.get('score'),
+    'total_accounts': None,
+    'negative_accounts_count': metrics.get('negative_accounts_count'),
+    'estimated_score_range': None,
+    'on_time_payment_ratio': None,
+    'oldest_account_age': None,
+    'pages': metrics.get('pages'),
+    'ocr_pages': metrics.get('ocr_pages'),
+    'total_chars': metrics.get('total_chars'),
+    'counts': metrics.get('counts')
+  }
+
+  # Basic priority issues from counts when AI is unavailable.
+  priority = []
+  counts = metrics.get('counts') or {}
+  if int(counts.get('collection', 0)) > 0:
+    priority.append(
+      {
+        'reason': 'Collections detected on your report.',
+        'impact_level': 'HIGH',
+        'recommended_action': 'Review each collection for accuracy and consider validation/dispute if unverifiable.'
+      }
+    )
+  if int(counts.get('charge_off', 0)) > 0:
+    priority.append(
+      {
+        'reason': 'Charge-off(s) detected.',
+        'impact_level': 'HIGH',
+        'recommended_action': 'Verify dates/balances/ownership; dispute inaccurate items; consider settlement strategy if valid.'
+      }
+    )
+  if int(counts.get('late_payment', 0)) > 0:
+    priority.append(
+      {
+        'reason': 'Late payments detected.',
+        'impact_level': 'MEDIUM',
+        'recommended_action': 'Check for incorrect dates/status; pursue goodwill removals for isolated lates; dispute inaccuracies.'
+      }
+    )
+  if int(counts.get('bankruptcy', 0)) > 0 or int(counts.get('public_record', 0)) > 0:
+    priority.append(
+      {
+        'reason': 'Public record items detected.',
+        'impact_level': 'HIGH',
+        'recommended_action': 'Verify court details and reporting period; dispute any mismatches or unverifiable entries.'
+      }
+    )
+  base['priority_issues'] = priority[:3]
 
   # Minimal negative_items derived from extracted items.
   with conn.cursor() as cur:
@@ -271,6 +348,94 @@ def _basic_ui_payload(conn: psycopg.Connection, *, report_id: str, pdf_file: Pat
   ]
 
   return base
+
+
+def _overlay_extraction_metrics(conn: psycopg.Connection, *, report_id: str, pdf_file: Path) -> None:
+  """Overlay computed extraction metrics onto analysis_json.
+
+  This ensures the UI always has: pages/ocr_pages/total_chars/counts/score when available.
+  """
+
+  metrics = _extraction_metrics(conn, report_id=report_id, pdf_file=pdf_file)
+
+  with conn.cursor() as cur:
+    cur.execute(
+      "select analysis_json from public.reports where id = %s;",
+      (report_id,)
+    )
+    row = cur.fetchone()
+  if not row or not row[0] or not isinstance(row[0], dict):
+    return
+
+  analysis = row[0]
+  cs = analysis.get('credit_summary') or {}
+  if not isinstance(cs, dict):
+    cs = {}
+
+  # Non-destructive fill for these keys.
+  for k in ['pages', 'ocr_pages', 'total_chars', 'counts']:
+    if cs.get(k) in (None, '', [], {}):
+      cs[k] = metrics.get(k)
+
+  # Fill score only if missing.
+  if cs.get('score') in (None, '') and metrics.get('score') is not None:
+    cs['score'] = metrics.get('score')
+
+  # Negative count: use the max of existing and extracted.
+  try:
+    cur_neg = cs.get('negative_accounts_count')
+    extracted_neg = metrics.get('negative_accounts_count')
+    if isinstance(extracted_neg, int):
+      if not isinstance(cur_neg, int) or extracted_neg > cur_neg:
+        cs['negative_accounts_count'] = extracted_neg
+  except Exception:
+    pass
+
+  analysis['credit_summary'] = cs
+
+  upsert_analysis(conn, report_id=report_id, result=analysis)
+
+
+def _hydrate_analysis_dispute_letters(conn: psycopg.Connection, *, report_id: str) -> None:
+  """Mirror latest letter drafts into analysis_json.dispute_letters for UI."""
+  with conn.cursor() as cur:
+    cur.execute(
+      "select analysis_json from public.reports where id = %s;",
+      (report_id,)
+    )
+    row = cur.fetchone()
+  if not row or not row[0]:
+    return
+
+  analysis = row[0]
+  if not isinstance(analysis, dict):
+    return
+
+  with conn.cursor() as cur:
+    cur.execute(
+      """
+      select distinct on (bureau)
+        id, bureau, content
+      from public.letter_drafts
+      where report_id = %s and status = 'draft'
+      order by bureau, created_at desc;
+      """,
+      (report_id,)
+    )
+    drafts = cur.fetchall() or []
+
+  items = []
+  for _id, bureau, content in drafts:
+    items.append(
+      {
+        'creditor_name': None,
+        'subject': f"Draft dispute letter ({bureau})",
+        'body': content
+      }
+    )
+  analysis['dispute_letters'] = items
+
+  upsert_analysis(conn, report_id=report_id, result=analysis)
 
 
 def run_report_pipeline(
@@ -308,6 +473,7 @@ def run_report_pipeline(
         raw_text = _full_text(conn, report_id=report_id)
         ui_report = extract_ui_report(client=client, raw_text=raw_text)
         upsert_analysis(conn, report_id=report_id, result=ui_report)
+        _overlay_extraction_metrics(conn, report_id=report_id, pdf_file=pdf_file)
         set_report_status(conn, report_id=report_id, status='processing', progress=93)
     except Exception as e:
       with conn.cursor() as cur:
@@ -319,6 +485,7 @@ def run_report_pipeline(
     # Always ensure we have a baseline UI payload even if OpenAI is disabled.
     if not _has_analysis_json(conn, report_id=report_id):
       upsert_analysis(conn, report_id=report_id, result=_basic_ui_payload(conn, report_id=report_id, pdf_file=pdf_file))
+    _overlay_extraction_metrics(conn, report_id=report_id, pdf_file=pdf_file)
 
     # AI recommendations and initial draft selections (item-level engine).
     # Keep pipeline robust if AI is disabled or errors.
@@ -340,6 +507,12 @@ def run_report_pipeline(
     # Draft dispute letters as text files.
     # Letters are now drafts awaiting user approval (stored in DB).
     _generate_letter_drafts(conn, report_id=report_id, business=business)
+
+    # Ensure dashboard has something to show in dispute queue.
+    try:
+      _hydrate_analysis_dispute_letters(conn, report_id=report_id)
+    except Exception:
+      pass
 
   set_report_status(conn, report_id=report_id, status='complete', progress=100)
 
@@ -518,9 +691,10 @@ def _build_dispute_letter(
     "",
     "Sincerely,",
     "__________________________",
-    "Name",
-    "Address",
-    "City, State ZIP",
+    "{{FULL_NAME}}",
+    "{{ADDRESS1}}",
+    "{{ADDRESS2}}",
+    "{{CITY}}, {{STATE}} {{POSTAL_CODE}}",
     ""
   ]
 
