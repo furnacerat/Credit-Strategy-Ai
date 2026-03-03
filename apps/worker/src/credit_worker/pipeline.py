@@ -14,6 +14,7 @@ from credit_worker.parse.items import iter_report_items
 from credit_worker.ai.openai_http import OpenAIHttp
 from credit_worker.ai.recommend import recommend_items_for_report
 from credit_worker.ai.extract_full_report import extract_ui_report
+from credit_worker.ai.report_schema import empty_report
 
 
 def set_report_status(
@@ -182,6 +183,96 @@ def _full_text(conn: psycopg.Connection, *, report_id: str) -> str:
   return ''.join(parts)
 
 
+def _has_analysis_json(conn: psycopg.Connection, *, report_id: str) -> bool:
+  with conn.cursor() as cur:
+    cur.execute(
+      "select analysis_json is not null from public.reports where id = %s;",
+      (report_id,)
+    )
+    row = cur.fetchone()
+  return bool(row and row[0])
+
+
+def _basic_ui_payload(conn: psycopg.Connection, *, report_id: str, pdf_file: Path) -> dict[str, Any]:
+  base = empty_report()
+
+  total_pages = page_count(str(pdf_file))
+  with conn.cursor() as cur:
+    cur.execute(
+      """
+      select
+        count(*) filter (where ocr_used) as ocr_pages,
+        sum(length(text)) as total_chars
+      from public.report_pages
+      where report_id = %s;
+      """,
+      (report_id,)
+    )
+    row = cur.fetchone() or (0, 0)
+    ocr_pages = int(row[0] or 0)
+    total_chars = int(row[1] or 0)
+
+  with conn.cursor() as cur:
+    cur.execute(
+      """
+      select category, count(*)
+      from public.report_items
+      where report_id = %s
+      group by category
+      order by category;
+      """,
+      (report_id,)
+    )
+    counts = {str(cat): int(cnt) for (cat, cnt) in (cur.fetchall() or [])}
+
+  negatives = 0
+  for k in ['late_payment', 'charge_off', 'collection', 'repossession', 'bankruptcy', 'public_record']:
+    negatives += int(counts.get(k, 0))
+
+  base['credit_summary'] = {
+    'total_accounts': None,
+    'negative_accounts_count': negatives,
+    'estimated_score_range': None,
+    'pages': total_pages,
+    'ocr_pages': ocr_pages,
+    'total_chars': total_chars,
+    'counts': counts
+  }
+
+  # Minimal negative_items derived from extracted items.
+  with conn.cursor() as cur:
+    cur.execute(
+      """
+      select category, bureau, creditor, account_ref, occurred_on, amount, page_number
+      from public.report_items
+      where report_id = %s
+        and category in ('late_payment','charge_off','collection','repossession','bankruptcy','public_record')
+      order by created_at asc
+      limit 200;
+      """,
+      (report_id,)
+    )
+    rows = cur.fetchall() or []
+
+  base['negative_items'] = [
+    {
+      'category': r[0],
+      'bureau': r[1],
+      'creditor_name': r[2],
+      'account_number': r[3],
+      'occurred_on': str(r[4]) if r[4] else None,
+      'amount': float(r[5]) if r[5] is not None else None,
+      'page_number': r[6],
+      'severity_score': None,
+      'estimated_score_impact': None,
+      'dispute_recommendation': None
+    }
+    for r in rows
+  ]
+
+  return base
+
+
 def run_report_pipeline(
   *,
   conn: psycopg.Connection,
@@ -225,6 +316,10 @@ def run_report_pipeline(
           (str(e), report_id)
         )
 
+    # Always ensure we have a baseline UI payload even if OpenAI is disabled.
+    if not _has_analysis_json(conn, report_id=report_id):
+      upsert_analysis(conn, report_id=report_id, result=_basic_ui_payload(conn, report_id=report_id, pdf_file=pdf_file))
+
     # AI recommendations and initial draft selections (item-level engine).
     # Keep pipeline robust if AI is disabled or errors.
     try:
@@ -240,45 +335,7 @@ def run_report_pipeline(
           (str(e), report_id)
         )
 
-    # If UI extraction didn't run, still write a small analysis payload.
-    with conn.cursor() as cur:
-      cur.execute(
-        "select 1 from public.report_analysis where report_id = %s;",
-        (report_id,)
-      )
-      has_analysis = cur.fetchone() is not None
-    if not has_analysis:
-      total_pages = page_count(str(pdf_file))
-      with conn.cursor() as cur:
-        cur.execute(
-          """
-          select
-            count(*) filter (where ocr_used) as ocr_pages,
-            sum(length(text)) as total_chars
-          from public.report_pages
-          where report_id = %s;
-          """,
-          (report_id,)
-        )
-        row = cur.fetchone() or (0, 0)
-        ocr_pages = int(row[0] or 0)
-        total_chars = int(row[1] or 0)
-      upsert_analysis(
-        conn,
-        report_id=report_id,
-        result={
-          'personal_info': {},
-          'credit_summary': {'pages': total_pages, 'ocr_pages': ocr_pages, 'total_chars': total_chars},
-          'accounts': [],
-          'negative_items': [],
-          'utilization': {},
-          'public_records': [],
-          'priority_issues': [],
-          'dispute_strategies': [],
-          'dispute_letters': [],
-          'improvement_plan': {}
-        }
-      )
+    # (analysis_json is now guaranteed non-null by the baseline writer above.)
 
     # Draft dispute letters as text files.
     # Letters are now drafts awaiting user approval (stored in DB).
