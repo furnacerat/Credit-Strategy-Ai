@@ -20,7 +20,7 @@ export default function UploadPage() {
   }
 
   return (
-    <main className="shell">
+    <div>
       <div className="topbar">
         <div>
           <p className="eyebrow">Upload</p>
@@ -109,6 +109,6 @@ export default function UploadPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

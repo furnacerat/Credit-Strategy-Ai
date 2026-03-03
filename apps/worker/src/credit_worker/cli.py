@@ -48,7 +48,25 @@ def main() -> None:
                 'name': s.business_name,
                 'address': s.business_address,
                 'phone': s.business_phone,
-                'email': s.business_email
+                'email': s.business_email,
+                'openai_api_key': s.openai_api_key,
+                'openai_model': s.openai_model
+              }
+            )
+          elif job.type == 'generate_drafts':
+            # Rebuild letter drafts based on current user selections.
+            from credit_worker.pipeline import _generate_letter_drafts
+
+            report_id = str(job.payload['report_id'])
+            _generate_letter_drafts(
+              conn,
+              report_id=report_id,
+              business={
+                'name': s.business_name,
+                'address': s.business_address,
+                'phone': s.business_phone,
+                'email': s.business_email,
+                'openai_model': s.openai_model
               }
             )
           else:

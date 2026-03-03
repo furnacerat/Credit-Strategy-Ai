@@ -42,6 +42,11 @@ Set these in Render for the worker service:
 - `OCR_ENABLED=true`
 - `TESSERACT_LANG=eng`
 
+AI:
+
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` (default: `gpt-4o-mini`)
+
 Recommended: deploy worker using `apps/worker/Dockerfile` (includes Tesseract).
 
 Local dev: this repo now includes `apps/worker/.env` (gitignored by default patterns).

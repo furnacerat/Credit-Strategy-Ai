@@ -44,18 +44,16 @@ export default function DashboardPage() {
   }, [router, supabase]);
 
   return (
-    <main className="shell">
+    <div>
       <div className="topbar">
         <div>
-          <p className="eyebrow">Dashboard</p>
-          <h1>Your reports</h1>
+          <p className="eyebrow">Personal cabinet</p>
+          <h1>Credit dashboard</h1>
         </div>
         <div className="topbar__actions">
-          <Link className="btn btn--ghost" href="/upload">
-            Upload new PDF
-          </Link>
+          <Link className="btn" href="/upload">Upload PDF</Link>
           <button
-            className="btn"
+            className="btn btn--ghost"
             onClick={async () => {
               await supabase.auth.signOut();
               router.push('/login');
@@ -66,7 +64,32 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <section className="grid">
+      <section className="grid grid--four">
+        <div className="card">
+          <p className="eyebrow" style={{ marginBottom: 6 }}>Reports</p>
+          <p className="card__title">{loading ? '—' : reports.length}</p>
+          <p className="muted">Total uploads</p>
+        </div>
+        <div className="card">
+          <p className="eyebrow" style={{ marginBottom: 6 }}>Queued</p>
+          <p className="card__title">
+            {loading ? '—' : reports.filter((r) => r.status === 'queued' || r.status === 'uploaded').length}
+          </p>
+          <p className="muted">Waiting for worker</p>
+        </div>
+        <div className="card">
+          <p className="eyebrow" style={{ marginBottom: 6 }}>Processing</p>
+          <p className="card__title">{loading ? '—' : reports.filter((r) => r.status === 'processing').length}</p>
+          <p className="muted">In progress</p>
+        </div>
+        <div className="card">
+          <p className="eyebrow" style={{ marginBottom: 6 }}>Complete</p>
+          <p className="card__title">{loading ? '—' : reports.filter((r) => r.status === 'complete').length}</p>
+          <p className="muted">Ready to review</p>
+        </div>
+      </section>
+
+      <section className="grid grid--two" style={{ marginTop: 14 }}>
         {loading ? (
           <div className="card"><p className="muted">Loading…</p></div>
         ) : reports.length === 0 ? (
@@ -76,22 +99,55 @@ export default function DashboardPage() {
             <Link className="btn" href="/upload">Upload PDF</Link>
           </div>
         ) : (
-          reports.map((r) => (
-            <Link key={r.id} className="card card--link" href={`/report/${r.id}`}>
+          <>
+            <div className="card">
               <div className="card__row">
-                <div>
-                  <p className="card__title">{r.original_filename || 'report.pdf'}</p>
-                  <p className="muted">{new Date(r.created_at).toLocaleString()}</p>
+                <h2 style={{ margin: 0 }}>Recent reports</h2>
+                <span className="pill pill--processing">auto-refresh later</span>
+              </div>
+              <div className="letters" style={{ marginTop: 10 }}>
+                {reports.slice(0, 8).map((r) => (
+                  <Link key={r.id} className="letter" href={`/report/${r.id}`}>
+                    <div>
+                      <p className="card__title">{r.original_filename || 'report.pdf'}</p>
+                      <p className="muted">{new Date(r.created_at).toLocaleString()}</p>
+                    </div>
+                    <span className={`pill pill--${r.status}`}>{r.status}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            <div className="card">
+              <h2>Quick actions</h2>
+              <p className="muted">Next best steps for this workflow.</p>
+              <div className="letters" style={{ marginTop: 10 }}>
+                <Link className="letter" href="/upload">
+                  <div>
+                    <p className="card__title">Upload a new report</p>
+                    <p className="muted">PDF up to ~50MB</p>
+                  </div>
+                  <span className="pill pill--complete">Start</span>
+                </Link>
+                <div className="letter" style={{ cursor: 'default' }}>
+                  <div>
+                    <p className="card__title">Review AI action list</p>
+                    <p className="muted">Approve what goes into drafts</p>
+                  </div>
+                  <span className="pill pill--queued">Next</span>
                 </div>
-                <span className={`pill pill--${r.status}`}>{r.status}</span>
+                <div className="letter" style={{ cursor: 'default' }}>
+                  <div>
+                    <p className="card__title">Approve letters</p>
+                    <p className="muted">Generate final downloads</p>
+                  </div>
+                  <span className="pill pill--queued">Soon</span>
+                </div>
               </div>
-              <div className="meter" aria-label="Progress">
-                <div className="meter__bar" style={{ width: `${Math.max(0, Math.min(100, r.progress))}%` }} />
-              </div>
-            </Link>
-          ))
+            </div>
+          </>
         )}
       </section>
-    </main>
+    </div>
   );
 }

@@ -20,60 +20,56 @@ export default function LoginPage() {
   }, [router, supabase.auth]);
 
   return (
-    <main className="shell">
-      <div className="panel">
-        <header className="panel__header">
-          <p className="eyebrow">Welcome back</p>
-          <h1>Sign in</h1>
-          <p className="muted">Upload your report, track progress, and download letters.</p>
-        </header>
+    <div className="panel">
+      <header className="panel__header">
+        <p className="eyebrow">Welcome back</p>
+        <h1>Sign in</h1>
+        <p className="muted">Upload your report, review recommendations, approve letter drafts.</p>
+      </header>
 
-        <form
-          className="form"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError(null);
-            const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-            setBusy(false);
-            if (err) return setError(err.message);
-            router.push('/dashboard');
-          }}
-        >
-          <label className="field">
-            <span>Email</span>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              type="email"
-              autoComplete="email"
-              required
-              placeholder="you@example.com"
-            />
-          </label>
+      <form
+        className="form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError(null);
+          const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+          setBusy(false);
+          if (err) return setError(err.message);
+          router.push('/dashboard');
+        }}
+      >
+        <label className="field">
+          <span>Email</span>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            autoComplete="email"
+            required
+            placeholder="you@example.com"
+          />
+        </label>
 
-          <label className="field">
-            <span>Password</span>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </label>
+        <label className="field">
+          <span>Password</span>
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            autoComplete="current-password"
+            required
+          />
+        </label>
 
-          {error ? <p className="error">{error}</p> : null}
+        {error ? <p className="error">{error}</p> : null}
 
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
+        <button className="btn" type="submit" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
 
-          <p className="fineprint">
-            Don&apos;t have an account yet? Create a user in Supabase Auth for now.
-          </p>
-        </form>
-      </div>
-    </main>
+        <p className="fineprint">No account? Create a user in Supabase Auth for now.</p>
+      </form>
+    </div>
   );
 }

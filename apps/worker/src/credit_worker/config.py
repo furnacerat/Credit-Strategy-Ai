@@ -30,6 +30,8 @@ class Settings:
   business_address: str
   business_phone: str
   business_email: str
+  openai_api_key: str
+  openai_model: str
 
 
 def load_settings() -> Settings:
@@ -51,5 +53,7 @@ def load_settings() -> Settings:
     business_name=os.getenv('BUSINESS_NAME', 'Your Company'),
     business_address=os.getenv('BUSINESS_ADDRESS', 'Address line 1, City, ST ZIP'),
     business_phone=os.getenv('BUSINESS_PHONE', '(000) 000-0000'),
-    business_email=os.getenv('BUSINESS_EMAIL', 'support@example.com')
+    business_email=os.getenv('BUSINESS_EMAIL', 'support@example.com'),
+    openai_api_key=os.getenv('OPENAI_API_KEY', ''),
+    openai_model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
   )
